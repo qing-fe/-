@@ -1,6 +1,6 @@
 package com.huang.redblack.service.impl;
 
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.huang.redblack.pojo.entity.UserAuthLogs;
 import com.huang.redblack.service.UserAuthLogsService;
 import com.huang.redblack.mapper.UserAuthLogsMapper;
