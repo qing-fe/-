@@ -1,0 +1,27 @@
+#spring:
+#  application:
+#    name: red-black
+
+spring:
+  profiles:
+    active: dev
+  application:
+    name: red-black
+  datasource:
+    url: jdbc:mysql://localhost:3306/red-black?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai
+    username: root
+    password: hzj327079254
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl  # 打印 SQL 到控制台（开发用）
+    map-underscore-to-camel-case: true                      # 下划线转驼峰
+  global-config:
+    db-config:
+      id-type: auto                                         # 数据库自增 ID
+      logic-delete-field: deletedAt                         # 软删除字段（配合 @TableLogic）
+  mapper-locations: classpath*:/mapper/**/*.xml             # XML 映射文件位置
+
+jwt:
+  secret: ${redblack.jwt.secret}
