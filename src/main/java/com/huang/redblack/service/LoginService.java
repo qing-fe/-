@@ -3,9 +3,8 @@ package com.huang.redblack.service;
 import com.baomidou.mybatisplus.spring.service.IService;
 import com.huang.redblack.pojo.dto.UserDTO;
 import com.huang.redblack.pojo.entity.Users;
-import com.huang.redblack.pojo.vo.LoginVO;
-import com.huang.redblack.pojo.vo.UserVO;
-import org.apache.tomcat.util.buf.UDecoder;
+import com.huang.redblack.pojo.vo.TokenVO;
+import jakarta.servlet.http.HttpServletRequest;
 
 /**
 * @author Admin
@@ -17,9 +16,10 @@ public interface LoginService extends IService<Users> {
     /**
      * 邮箱登录
      * @param userDTO
+     * @param request
      * @return
      */
-    String loginByEmail(UserDTO userDTO);
+    TokenVO loginByEmail(UserDTO userDTO, HttpServletRequest request);
 
     /**
      * 密码登录
@@ -30,9 +30,10 @@ public interface LoginService extends IService<Users> {
 
     /**
      * 注册
+     *
      * @param userDTO
      */
-    UserVO register(UserDTO userDTO);
+    TokenVO register(UserDTO userDTO, HttpServletRequest request);
 
     /**
      * 发送验证码

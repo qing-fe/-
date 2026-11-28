@@ -1,11 +1,15 @@
 package com.huang.redblack.commen.result;
 
+import lombok.*;
+
 import java.time.LocalDateTime;
 
+@Setter
+@Getter
 public class Result<T> {
 
     private int code;
-    private String massage;
+    private String message;
     private T data;
     private LocalDateTime timestamp;
 
@@ -13,8 +17,8 @@ public class Result<T> {
         this.timestamp = LocalDateTime.now();
     }
 
-    public Result(String massage, int code, T data) {
-        this.massage = massage;
+    public Result(String message, int code, T data) {
+        this.message = message;
         this.code = code;
         this.data = data;
         this.timestamp = LocalDateTime.now();
@@ -30,16 +34,16 @@ public class Result<T> {
         return new Result<>("success", 200, data);
     }
 
-    public static <T> Result<T> success(String massage, T data){
-        return new Result<>(massage, 200, data);
+    public static <T> Result<T> success(String message, T data){
+        return new Result<>(message, 200, data);
     }
 
     // ==================== 失败 ====================
-    public static <T> Result<T> error(String massage){
-        return new Result<>(massage, 500, null);
+    public static <T> Result<T> error(String message){
+        return new Result<>(message, 500, null);
     }
 
-    public static <T> Result<T> error(String massage, T data){
-        return new Result<>(massage, 500, data);
+    public static <T> Result<T> error(String message, T data){
+        return new Result<>(message, 500, data);
     }
 }

@@ -6,34 +6,27 @@ import com.huang.redblack.commen.constant.MessageConstant;
 import com.huang.redblack.commen.constant.TimeConstant;
 import com.huang.redblack.commen.constant.UserAuthLogsConstant;
 import com.huang.redblack.commen.key.RedisKey;
-import com.huang.redblack.commen.utils.JWTUtil;
 import com.huang.redblack.mapper.LoginMapper;
 import com.huang.redblack.mapper.UserAuthLogsMapper;
 import com.huang.redblack.mapper.UsersMapper;
 import com.huang.redblack.pojo.dto.UserDTO;
 import com.huang.redblack.pojo.entity.UserAuthLogs;
 import com.huang.redblack.pojo.entity.Users;
-import com.huang.redblack.pojo.vo.LoginVO;
-import com.huang.redblack.pojo.vo.UserVO;
+import com.huang.redblack.pojo.vo.TokenVO;
 import com.huang.redblack.service.LoginService;
+import com.huang.redblack.service.TokenService;
+import jakarta.servlet.http.HttpServletRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.catalina.mbeans.UserMBean;
-import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Bean;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 
-import javax.swing.text.html.Option;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.Objects;
-import java.util.Optional;
-import java.util.Random;
 import java.util.concurrent.TimeUnit;
-import java.util.logging.LogManager;
 
 /**
  * @author Admin
@@ -52,19 +45,19 @@ public class LoginServiceImpl extends ServiceImpl<UsersMapper, Users> implements
     private LoginMapper loginMapper;
     @Autowired
     private UserAuthLogsMapper userAuthLogsMapper;
+    @Autowired
+    private TokenService tokenService;
 
 
     @Override
     @Operation(summary = "邮箱登录")
-    public String loginByEmail(UserDTO userDTO) {
+    public TokenVO loginByEmail(UserDTO userDTO, HttpServletRequest request) {
         String email = userDTO.getEmail();
         Users user = lambdaQuery().eq(Users::getEmail, email).one();
-        if(Objects.isNull(user)){
-            //TODO 用户不存在
+        if (Objects.isNull(user)) {
+            throw new RuntimeException("用户不存在");
         }
-        //TODO 用户存在，完成登录
-        String token = JWTUtil.generateToken(user.getId().longValue(), user.getEmail());
-        return token;
+        return tokenService.login(user.getEmail(), request);
     }
 
 
@@ -73,12 +66,13 @@ public class LoginServiceImpl extends ServiceImpl<UsersMapper, Users> implements
     @Operation(summary = "密码登录")
     public String loginByPassword(UserDTO userDTO) {
         // TODO 密码登录
+
         return null;
     }
 
     @Override
     @Operation(summary = "注册")
-    public UserVO register(UserDTO userDTO) {
+    public TokenVO register(UserDTO userDTO, HttpServletRequest request) {
         String email = userDTO.getEmail();
         String verifyCode = userDTO.getVerifyCode();
         //日志
@@ -96,7 +90,7 @@ public class LoginServiceImpl extends ServiceImpl<UsersMapper, Users> implements
             }
 
             // 2. 校验验证码
-            String codeKey = RedisKey.USER_VERIFY_CODE + email;
+            String codeKey = RedisKey.USER + userDTO.getEmail() + ":" + RedisKey.VERIFY_CODE;
             String redisCode = redisTemplate.opsForValue().get(codeKey);
 
             if (redisCode == null) {
@@ -134,17 +128,13 @@ public class LoginServiceImpl extends ServiceImpl<UsersMapper, Users> implements
             newUser.setUpdated_at(LocalDateTime.now());
             save(newUser);
 
-            //保存用户信息
-            loginMapper.insert(newUser);
-
             // 6. 返回 VO
-            UserVO vo = new UserVO();
-            BeanUtils.copyProperties(newUser, vo);
+            TokenVO tokenVO = tokenService.login(newUser.getEmail(), request);
 
             //保存注册成功信息
             userAuthLogs.setResult(1);
             userAuthLogsMapper.insert(userAuthLogs);
-            return vo;
+            return tokenVO;
         } catch (RuntimeException e) {
             userAuthLogs.setResult(0);
             userAuthLogs.setFail_reason(e.getMessage());
@@ -172,7 +162,8 @@ public class LoginServiceImpl extends ServiceImpl<UsersMapper, Users> implements
         for (int i = 0; i < 6; i++) {
             verifyCode.append(RANDOM.nextInt(10));
         }
-        redisTemplate.opsForValue().set(RedisKey.USER_VERIFY_CODE + email, verifyCode.toString(), TimeConstant.VERIFY_CODE_EXPIRE_TIME, TimeUnit.MINUTES);
+        redisTemplate.opsForValue().set(RedisKey.USER + email + ":" + RedisKey.VERIFY_CODE, verifyCode.toString(), TimeConstant.VERIFY_CODE_EXPIRE_TIME, TimeUnit.MINUTES);
+        //TODO 发送验证码
         log.info("已将验证码{}发送到邮箱{}", verifyCode, email);
         return verifyCode.toString();
     }

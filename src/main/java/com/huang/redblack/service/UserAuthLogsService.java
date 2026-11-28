@@ -1,7 +1,7 @@
 package com.huang.redblack.service;
 
 import com.huang.redblack.pojo.entity.UserAuthLogs;
-import com.baomidou.mybatisplus.extension.service.IService;
+import com.baomidou.mybatisplus.spring.service.IService;
 
 /**
 * @author Admin

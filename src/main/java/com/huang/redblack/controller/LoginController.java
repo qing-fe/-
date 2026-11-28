@@ -3,10 +3,12 @@ package com.huang.redblack.controller;
 import com.huang.redblack.commen.result.Result;
 import com.huang.redblack.pojo.dto.UserDTO;
 import com.huang.redblack.pojo.vo.LoginVO;
+import com.huang.redblack.pojo.vo.TokenVO;
 import com.huang.redblack.pojo.vo.UserVO;
 import com.huang.redblack.service.LoginService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.el.parser.Token;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,10 +27,10 @@ public class LoginController {
 
     @PostMapping("/email")
     @Operation(summary = "邮箱登录", description = "通过邮箱登录系统")
-    public Result<String> loginByEmail(@RequestBody UserDTO userDTO){
-        String token = loginService.loginByEmail(userDTO);
-        log.info("token: {}", token);
-        return Result.success(token);
+    public Result<TokenVO> loginByEmail(@RequestBody UserDTO userDTO, HttpServletRequest request){
+        TokenVO tokenVO = loginService.loginByEmail(userDTO, request);
+        log.info("tokenVO: {}", tokenVO);
+        return Result.success(tokenVO);
     }
     /*{
         "username": "huang",
@@ -46,10 +48,10 @@ public class LoginController {
 
     @PostMapping("/register")
     @Operation(summary = "注册", description = "注册系统")
-    public Result<UserVO> register(@RequestBody UserDTO userDTO){
-        UserVO user = loginService.register(userDTO);
-        log.info("userVO: {}", user);
-        return Result.success(user);
+    public Result<TokenVO> register(@RequestBody UserDTO userDTO,HttpServletRequest request){
+        TokenVO tokenVO = loginService.register(userDTO, request);
+        log.info("userVO: {}", tokenVO);
+        return Result.success(tokenVO);
     }
 
     @PostMapping("/sendCode")
