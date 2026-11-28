@@ -1,6 +1,8 @@
 package com.huang.redblack.service.impl;
 
+import com.huang.redblack.commen.constant.ExceptionConstant;
 import com.huang.redblack.commen.constant.UserAuthLogsConstant;
+import com.huang.redblack.commen.exception.BusinessException;
 import com.huang.redblack.commen.key.RedisKey;
 import com.huang.redblack.commen.properties.JWTProperties;
 import com.huang.redblack.pojo.vo.TokenVO;
@@ -84,16 +86,16 @@ public class TokenServiceImpl implements TokenService {
             claims = jws.getPayload();
         } catch (ExpiredJwtException e) {
             log.warn("Refresh Token 已过期");
-            throw new RuntimeException("登录状态已过期，请重新登录");
+            throw new BusinessException(ExceptionConstant.REFRESH_TOKEN_EXPIRED, ExceptionConstant.MSG_LOGIN_EXPIRED);
         } catch (JwtException e) {
             log.warn("Refresh Token 非法: {}", e.getMessage());
-            throw new RuntimeException("非法的登录凭证");
+            throw new BusinessException(ExceptionConstant.TOKEN_TYPE_ERROR, ExceptionConstant.MSG_INVALID_CREDENTIAL);
         }
 
         // 2. 校验 Token 类型必须是 REFRESH
         String type = claims.get("type", String.class);
         if (!"REFRESH".equals(type)) {
-            throw new RuntimeException("非法的刷新凭证");
+            throw new BusinessException(ExceptionConstant.TOKEN_TYPE_ERROR, ExceptionConstant.MSG_INVALID_REFRESH_CREDENTIAL);
         }
 
         String email = claims.getSubject();
@@ -103,7 +105,7 @@ public class TokenServiceImpl implements TokenService {
         String storedToken = redisTemplate.opsForValue().get(redisKey);
         if (storedToken == null) {
             log.warn("Redis 中不存在该用户的 Refresh Token，可能已过期或从未登录 | email={}", email);
-            throw new RuntimeException("登录状态已失效，请重新登录");
+            throw new BusinessException(ExceptionConstant.UNAUTHORIZED, ExceptionConstant.MSG_LOGIN_INVALID);
         }
 
         if (!refreshToken.equals(storedToken)) {
@@ -113,7 +115,7 @@ public class TokenServiceImpl implements TokenService {
             // 安全策略：立即吊销该用户的所有登录态
             revokeAllUserTokens(email);
 
-            throw new RuntimeException("登录状态异常，请重新登录");
+            throw new BusinessException(ExceptionConstant.LOGIN_STATUS_ERROR, ExceptionConstant.MSG_LOGIN_ABNORMAL);
         }
 
         // 4. 生成新的双 Token

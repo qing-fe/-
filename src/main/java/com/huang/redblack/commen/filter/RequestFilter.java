@@ -1,6 +1,7 @@
 package com.huang.redblack.commen.filter;
 
 import tools.jackson.databind.ObjectMapper;
+import com.huang.redblack.commen.constant.ExceptionConstant;
 import com.huang.redblack.commen.key.RedisKey;
 import com.huang.redblack.commen.properties.JWTProperties;
 import com.huang.redblack.commen.result.Result;
@@ -73,7 +74,7 @@ public class RequestFilter extends OncePerRequestFilter {
         // 2. 提取 Access Token
         String authHeader = request.getHeader("Authorization");
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            writeUnauthorized(response, "缺少访问令牌，请先登录");
+            writeUnauthorized(response, ExceptionConstant.MSG_TOKEN_MISSING);
             return;
         }
 
@@ -83,7 +84,7 @@ public class RequestFilter extends OncePerRequestFilter {
         try {
             // 3.1 检查是否在黑名单（用户主动登出 / 刷新作废旧 AT）
             if (Boolean.TRUE.equals(stringRedisTemplate.hasKey(RedisKey.BLACKLIST + accessToken))) {
-                writeUnauthorized(response, "令牌已失效，请重新登录");
+                writeUnauthorized(response, ExceptionConstant.MSG_TOKEN_INVALID);
                 return;
             }
 
@@ -99,14 +100,14 @@ public class RequestFilter extends OncePerRequestFilter {
             // 3.3 校验 Token 类型必须是 ACCESS
             String type = claims.get("type", String.class);
             if (!"ACCESS".equals(type)) {
-                writeUnauthorized(response, "非法的访问令牌");
+                writeUnauthorized(response, ExceptionConstant.MSG_TOKEN_ILLEGAL);
                 return;
             }
 
             // 3.4 校验过期时间（双重保险）
             Date expiration = claims.getExpiration();
             if (expiration != null && expiration.before(new Date())) {
-                writeUnauthorized(response, "访问令牌已过期");
+                writeUnauthorized(response, ExceptionConstant.MSG_TOKEN_EXPIRED);
                 return;
             }
 
@@ -116,11 +117,11 @@ public class RequestFilter extends OncePerRequestFilter {
 
         } catch (ExpiredJwtException e) {
             log.warn("AT 已过期: {}", e.getMessage());
-            writeUnauthorized(response, "访问令牌已过期");
+            writeUnauthorized(response, ExceptionConstant.MSG_TOKEN_EXPIRED);
             return;
         } catch (JwtException e) {
             log.warn("AT 解析失败: {}", e.getMessage());
-            writeUnauthorized(response, "非法的访问令牌");
+            writeUnauthorized(response, ExceptionConstant.MSG_TOKEN_ILLEGAL);
             return;
         }
 
@@ -142,9 +143,10 @@ public class RequestFilter extends OncePerRequestFilter {
         response.setStatus(HttpStatus.UNAUTHORIZED.value());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE + ";charset=UTF-8");
 
-        // Result 类暂无自定义 code 的构造方法，直接构造 JSON
+        // 由过滤器直接写出统一结构的 JSON
         String json = String.format(
-                "{\"code\":401,\"message\":\"%s\",\"data\":null,\"timestamp\":\"%s\"}",
+                "{\"code\":%d,\"message\":\"%s\",\"data\":null,\"timestamp\":\"%s\"}",
+                ExceptionConstant.UNAUTHORIZED,
                 message,
                 java.time.LocalDateTime.now().toString()
         );

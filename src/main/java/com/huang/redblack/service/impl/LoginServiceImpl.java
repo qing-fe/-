@@ -2,9 +2,11 @@ package com.huang.redblack.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
+import com.huang.redblack.commen.constant.ExceptionConstant;
 import com.huang.redblack.commen.constant.MessageConstant;
 import com.huang.redblack.commen.constant.TimeConstant;
 import com.huang.redblack.commen.constant.UserAuthLogsConstant;
+import com.huang.redblack.commen.exception.BusinessException;
 import com.huang.redblack.commen.key.RedisKey;
 import com.huang.redblack.mapper.LoginMapper;
 import com.huang.redblack.mapper.UserAuthLogsMapper;
@@ -54,7 +56,7 @@ public class LoginServiceImpl extends ServiceImpl<UsersMapper, Users> implements
         String email = userDTO.getEmail();
         Users user = lambdaQuery().eq(Users::getEmail, email).one();
         if (Objects.isNull(user)) {
-            throw new RuntimeException("用户不存在");
+            throw new BusinessException(ExceptionConstant.NOT_FOUND, ExceptionConstant.MSG_USER_NOT_FOUND);
         }
         return tokenService.login(user.getEmail());
     }
@@ -85,7 +87,7 @@ public class LoginServiceImpl extends ServiceImpl<UsersMapper, Users> implements
                 userAuthLogs.setResult(0);
                 userAuthLogs.setFail_reason(MessageConstant.USERNAME_OR_PASSWORD_ERROR);
                 userAuthLogsMapper.insert(userAuthLogs);
-                throw new RuntimeException(MessageConstant.USERNAME_OR_PASSWORD_ERROR);
+                throw new BusinessException(ExceptionConstant.BAD_REQUEST, MessageConstant.USERNAME_OR_PASSWORD_ERROR);
             }
 
             // 2. 校验验证码
@@ -93,17 +95,17 @@ public class LoginServiceImpl extends ServiceImpl<UsersMapper, Users> implements
             String redisCode = redisTemplate.opsForValue().get(codeKey);
 
             if (redisCode == null) {
-                throw new RuntimeException(MessageConstant.VERIFY_CODE_EXPIRED);
+                throw new BusinessException(ExceptionConstant.BAD_REQUEST, MessageConstant.VERIFY_CODE_EXPIRED);
             }
             if (!verifyCode.equals(redisCode)) {
-                throw new RuntimeException(MessageConstant.VERIFY_CODE_ERROR);
+                throw new BusinessException(ExceptionConstant.BAD_REQUEST, MessageConstant.VERIFY_CODE_ERROR);
             }
             // 3. 校验通过后立即删除验证码（一次性使用）
             redisTemplate.delete(codeKey);
 
             //1.1 邮箱格式检查
             if(!email.matches(EMAIL_REGEX)){
-                throw new RuntimeException(MessageConstant.EMAIL_FORMAT_ERROR);
+                throw new BusinessException(ExceptionConstant.BAD_REQUEST, MessageConstant.EMAIL_FORMAT_ERROR);
             }
 
             // 4. 校验邮箱是否已注册
@@ -111,7 +113,7 @@ public class LoginServiceImpl extends ServiceImpl<UsersMapper, Users> implements
                     .eq(Users::getEmail, email)
                     .one();
             if (existUser != null) {
-                throw new RuntimeException(MessageConstant.EMAIL_ALREADY_EXISTS);
+                throw new BusinessException(ExceptionConstant.CONFLICT, MessageConstant.EMAIL_ALREADY_EXISTS);
             }
 
             // 5. 创建用户（不用 BeanUtils 复制密码，手动设值更安全）
@@ -138,7 +140,7 @@ public class LoginServiceImpl extends ServiceImpl<UsersMapper, Users> implements
             userAuthLogs.setResult(0);
             userAuthLogs.setFail_reason(e.getMessage());
             userAuthLogsMapper.insert(userAuthLogs);
-            throw new RuntimeException(e);
+            throw e;
         }
     }
 
@@ -149,12 +151,12 @@ public class LoginServiceImpl extends ServiceImpl<UsersMapper, Users> implements
         //1.1 邮箱格式检查
         String email = userDTO.getEmail();
         if(!email.matches(EMAIL_REGEX)){
-            throw new RuntimeException(MessageConstant.EMAIL_FORMAT_ERROR);
+            throw new BusinessException(ExceptionConstant.BAD_REQUEST, MessageConstant.EMAIL_FORMAT_ERROR);
         }
         //1.2 邮箱是否已存在
         Users user = lambdaQuery().eq(Users::getEmail, email).one();
         if(Objects.nonNull(user)){
-            throw new RuntimeException(MessageConstant.EMAIL_ALREADY_EXISTS);
+            throw new BusinessException(ExceptionConstant.CONFLICT, MessageConstant.EMAIL_ALREADY_EXISTS);
         }
         //1.3 验证码生成
         StringBuilder verifyCode = new StringBuilder();
