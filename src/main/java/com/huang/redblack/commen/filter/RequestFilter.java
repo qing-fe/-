@@ -1,6 +1,7 @@
 package com.huang.redblack.commen.filter;
 
 import tools.jackson.databind.ObjectMapper;
+import com.huang.redblack.commen.key.RedisKey;
 import com.huang.redblack.commen.properties.JWTProperties;
 import com.huang.redblack.commen.result.Result;
 import io.jsonwebtoken.*;
@@ -52,8 +53,6 @@ public class RequestFilter extends OncePerRequestFilter {
     private static final Set<String> PUBLIC_PATHS = Set.of(
             "/api/qing/login",
             "/api/qing/refresh",
-            "/api/qing/captcha",
-            "/api/qing/register",
             "/swagger-ui",
             "/v3/api-docs"
     );
@@ -82,8 +81,8 @@ public class RequestFilter extends OncePerRequestFilter {
 
         // 3. 校验 Access Token
         try {
-            // 3.1 检查是否在黑名单（用户主动登出）
-            if (Boolean.TRUE.equals(stringRedisTemplate.hasKey("blacklist:at:" + accessToken))) {
+            // 3.1 检查是否在黑名单（用户主动登出 / 刷新作废旧 AT）
+            if (Boolean.TRUE.equals(stringRedisTemplate.hasKey(RedisKey.BLACKLIST + accessToken))) {
                 writeUnauthorized(response, "令牌已失效，请重新登录");
                 return;
             }

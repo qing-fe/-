@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.spring.service.IService;
 import com.huang.redblack.pojo.dto.UserDTO;
 import com.huang.redblack.pojo.entity.Users;
 import com.huang.redblack.pojo.vo.TokenVO;
-import jakarta.servlet.http.HttpServletRequest;
 
 /**
 * @author Admin
@@ -16,10 +15,9 @@ public interface LoginService extends IService<Users> {
     /**
      * 邮箱登录
      * @param userDTO
-     * @param request
      * @return
      */
-    TokenVO loginByEmail(UserDTO userDTO, HttpServletRequest request);
+    TokenVO loginByEmail(UserDTO userDTO);
 
     /**
      * 密码登录
@@ -33,7 +31,7 @@ public interface LoginService extends IService<Users> {
      *
      * @param userDTO
      */
-    TokenVO register(UserDTO userDTO, HttpServletRequest request);
+    TokenVO register(UserDTO userDTO);
 
     /**
      * 发送验证码

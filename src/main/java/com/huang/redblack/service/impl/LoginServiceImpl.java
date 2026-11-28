@@ -15,7 +15,6 @@ import com.huang.redblack.pojo.entity.Users;
 import com.huang.redblack.pojo.vo.TokenVO;
 import com.huang.redblack.service.LoginService;
 import com.huang.redblack.service.TokenService;
-import jakarta.servlet.http.HttpServletRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,13 +50,13 @@ public class LoginServiceImpl extends ServiceImpl<UsersMapper, Users> implements
 
     @Override
     @Operation(summary = "邮箱登录")
-    public TokenVO loginByEmail(UserDTO userDTO, HttpServletRequest request) {
+    public TokenVO loginByEmail(UserDTO userDTO) {
         String email = userDTO.getEmail();
         Users user = lambdaQuery().eq(Users::getEmail, email).one();
         if (Objects.isNull(user)) {
             throw new RuntimeException("用户不存在");
         }
-        return tokenService.login(user.getEmail(), request);
+        return tokenService.login(user.getEmail());
     }
 
 
@@ -72,7 +71,7 @@ public class LoginServiceImpl extends ServiceImpl<UsersMapper, Users> implements
 
     @Override
     @Operation(summary = "注册")
-    public TokenVO register(UserDTO userDTO, HttpServletRequest request) {
+    public TokenVO register(UserDTO userDTO) {
         String email = userDTO.getEmail();
         String verifyCode = userDTO.getVerifyCode();
         //日志
@@ -129,7 +128,7 @@ public class LoginServiceImpl extends ServiceImpl<UsersMapper, Users> implements
             save(newUser);
 
             // 6. 返回 VO
-            TokenVO tokenVO = tokenService.login(newUser.getEmail(), request);
+            TokenVO tokenVO = tokenService.login(newUser.getEmail());
 
             //保存注册成功信息
             userAuthLogs.setResult(1);

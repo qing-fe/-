@@ -1,6 +1,5 @@
 package com.huang.redblack.service.impl;
 
-import cn.hutool.crypto.digest.DigestUtil;
 import com.huang.redblack.commen.constant.UserAuthLogsConstant;
 import com.huang.redblack.commen.key.RedisKey;
 import com.huang.redblack.commen.properties.JWTProperties;
@@ -8,7 +7,6 @@ import com.huang.redblack.pojo.vo.TokenVO;
 import com.huang.redblack.service.TokenService;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
-import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -25,9 +23,8 @@ import java.util.concurrent.TimeUnit;
  * Token 业务处理层
  * <p>
  * 核心职责：
- * 1. 刷新双 Token（Rotation 策略）：每次刷新都生成新 AT + 新 RT，旧 RT 立即作废
- * 2. 设备绑定：RT 与设备指纹（IP+UA）绑定，防止盗用
- * 3. 登录状态管理：支持主动登出、异常检测（重放攻击时吊销全部 Token）
+ * 1. 签发与刷新双 Token（Rotation 策略）：每次刷新都生成新 AT + 新 RT，旧 RT 立即作废
+ * 2. 登录状态管理：支持主动登出、异常检测（重放攻击时吊销全部 Token）
  */
 @Slf4j
 @Service
@@ -40,20 +37,17 @@ public class TokenServiceImpl implements TokenService {
     private JWTProperties jwtProperties;
 
     /**
-     * 登录时签发双 Token（AT + RT），并将 RT 写入 Redis（设备绑定）
+     * 登录时签发双 Token（AT + RT），并将 RT 写入 Redis
      *
      * @param email 用户邮箱
-     * @param request HttpServletRequest，用于获取设备指纹
      * @return TokenVO 包含 accessToken、refreshToken、tokenType、expiresIn
      */
     @Override
-    public TokenVO login(String email, HttpServletRequest request) {
+    public TokenVO login(String email) {
         String newAccessToken = createAccessToken(email);
         String newRefreshToken = createRefreshToken(email);
 
-        String deviceId = generateDeviceId(request);
         String refreshTokenKey = RedisKey.USER + email + ":" + RedisKey.TOKEN + RedisKey.REFRESH;
-        String accessTokenKey = RedisKey.USER + email + ":" + RedisKey.TOKEN + RedisKey.ACCESS;
         redisTemplate.opsForValue().set(
                 refreshTokenKey,
                 newRefreshToken,
@@ -61,14 +55,7 @@ public class TokenServiceImpl implements TokenService {
                 TimeUnit.SECONDS
         );
 
-        redisTemplate.opsForValue().set(
-                accessTokenKey,
-                newAccessToken,
-                jwtProperties.getAccessTokenExpire(),
-                TimeUnit.SECONDS
-        );
-
-        log.info("登录签发双 Token | email={} | deviceId={}", email, deviceId);
+        log.info("登录签发双 Token | email={}", email);
 
         return TokenVO.builder()
                 .accessToken(newAccessToken)
@@ -81,11 +68,11 @@ public class TokenServiceImpl implements TokenService {
     /**
      * 刷新 Token：使用 Refresh Token 换取新的 AT + RT（Rotation 策略）
      *
-     * @param refreshToken 前端传来的 Refresh Token
-     * @param request      HttpServletRequest，用于获取设备指纹
+     * @param refreshToken    前端传来的 Refresh Token
+     * @param oldAccessToken  旧访问令牌（可选；传入则刷新成功后旧 AT 加入黑名单立即作废）
      * @return TokenVO 包含新的 accessToken、refreshToken、tokenType、expiresIn
      */
-    public TokenVO refresh(String refreshToken, HttpServletRequest request) {
+    public TokenVO refresh(String refreshToken, String oldAccessToken) {
         // 1. 解析 Refresh Token
         SecretKey key = getSecretKey();
         Claims claims;
@@ -110,13 +97,12 @@ public class TokenServiceImpl implements TokenService {
         }
 
         String email = claims.getSubject();
-        String deviceId = generateDeviceId(request);
         String redisKey = RedisKey.USER + email + ":" + RedisKey.TOKEN + RedisKey.REFRESH;
 
         // 3. 【核心安全校验】Redis 中存储的 RT 必须与传入的一致
         String storedToken = redisTemplate.opsForValue().get(redisKey);
         if (storedToken == null) {
-            log.warn("Redis 中不存在该设备的 Refresh Token，可能已过期或从未登录 | email={}", email);
+            log.warn("Redis 中不存在该用户的 Refresh Token，可能已过期或从未登录 | email={}", email);
             throw new RuntimeException("登录状态已失效，请重新登录");
         }
 
@@ -124,7 +110,7 @@ public class TokenServiceImpl implements TokenService {
             // 【严重】Token 不匹配：可能是重放攻击或 RT 泄露
             log.error("Refresh Token 不匹配！疑似重放攻击或凭证泄露 | email={}", email);
 
-            // 安全策略：立即吊销该用户的所有设备登录态
+            // 安全策略：立即吊销该用户的所有登录态
             revokeAllUserTokens(email);
 
             throw new RuntimeException("登录状态异常，请重新登录");
@@ -134,7 +120,7 @@ public class TokenServiceImpl implements TokenService {
         String newAccessToken = createAccessToken(email);
         String newRefreshToken = createRefreshToken(email);
 
-        // 5. 【Rotation】删除旧的 RT，存入新的 RT（设备绑定）
+        // 5. 【Rotation】删除旧的 RT，存入新的 RT
         redisTemplate.delete(redisKey);
         redisTemplate.opsForValue().set(
                 redisKey,
@@ -143,7 +129,10 @@ public class TokenServiceImpl implements TokenService {
                 TimeUnit.SECONDS
         );
 
-        log.info("Token 刷新成功 | email={} | deviceId={}", email, deviceId);
+        // 5.1 刷新成功即作废旧 AT（加入黑名单），旧 AT 立即失效
+        blacklistAccessToken(oldAccessToken, email);
+
+        log.info("Token 刷新成功 | email={}", email);
 
         return TokenVO.builder()
                 .accessToken(newAccessToken)
@@ -158,12 +147,11 @@ public class TokenServiceImpl implements TokenService {
      *
      * @param accessToken  当前 Access Token
      * @param refreshToken 当前 Refresh Token
-     * @param request      HttpServletRequest
      */
-    public void logout(String accessToken, String refreshToken, HttpServletRequest request) {
+    public void logout(String accessToken, String refreshToken) {
         SecretKey key = getSecretKey();
 
-        // 1. 解析 RT 获取 userId（AT 可能已过期，优先用 RT）
+        // 1. 解析 RT 获取 email（AT 可能已过期，优先用 RT）
         String email;
         try {
             Claims claims = Jwts.parser()
@@ -182,47 +170,35 @@ public class TokenServiceImpl implements TokenService {
                         .getPayload();
                 email = claims.getSubject();
             } catch (JwtException ex) {
-                log.warn("退出时双 Token 均无法解析，直接删除设备绑定");
-                // 兜底：尽量删除当前设备的 Redis 记录
-                String deviceId = generateDeviceId(request);
-                // 无法确定 userId，无法精准删除，依赖 Redis TTL 自动过期
+                log.warn("退出时双 Token 均无法解析，无法定位用户，依赖 Redis TTL 自动过期");
                 return;
             }
         }
 
-        String deviceId = generateDeviceId(request);
         String redisKey = RedisKey.USER + email + ":" + RedisKey.TOKEN + RedisKey.REFRESH;
 
-        // 2. 删除该设备的 Refresh Token
+        // 2. 删除该用户的 Refresh Token
         redisTemplate.delete(redisKey);
 
         // 3. 将 Access Token 加入黑名单（防止在 AT 过期前被冒用）
-        long ttl = getTokenRemainingTTL(accessToken);
-        if (ttl > 0) {
-            redisTemplate.opsForValue().set(
-                    RedisKey.BLACKLIST + accessToken,
-                    UserAuthLogsConstant.BLACKLIST_VALID,
-                    ttl,
-                    TimeUnit.MILLISECONDS
-            );
-        }
+        blacklistAccessToken(accessToken, email);
 
-        log.info("用户退出登录 | email={} | deviceId={}", email, deviceId);
+        log.info("用户退出登录 | email={}", email);
     }
 
     /**
-     * 吊销用户的所有登录态（所有设备）
+     * 吊销用户的所有登录态
      * <p>
      * 用于：检测到重放攻击、用户修改密码、管理员强制下线
      *
      * @param email 用户邮箱
      */
     public void revokeAllUserTokens(String email) {
-        // 1. 查找该用户的所有设备 Redis Key
-        Set<String> keys = redisTemplate.keys(RedisKey.USER + email + ":" + RedisKey.TOKEN + ":*");
+        // 1. 查找该用户的所有 Token Redis Key
+        Set<String> keys = redisTemplate.keys(RedisKey.USER + email + ":" + RedisKey.TOKEN + "*");
         if (keys != null && !keys.isEmpty()) {
             redisTemplate.delete(keys);
-            log.info("已吊销用户所有设备登录态 | email={} | 设备数={}", email, keys.size());
+            log.info("已吊销用户所有登录态 | email={} | key数={}", email, keys.size());
         }
     }
 
@@ -268,50 +244,6 @@ public class TokenServiceImpl implements TokenService {
     }
 
     /**
-     * 生成设备指纹（绑定 IP + User-Agent）
-     * <p>
-     * 原理：把用户的 IP 地址和浏览器标识（User-Agent）拼接成字符串，
-     * 通过 MD5 哈希生成 32 位固定长度的唯一标识。
-     * <p>
-     * 例如：
-     * 原始信息 = "192.168.1.100:Mozilla/5.0 (Windows NT 10.0; Win64; x64)..."
-     * 设备指纹 = "a3f5c8e2d9b1..."（32位MD5）
-     * <p>
-     * 注意：如果用户网络环境变化（如切换 WiFi），IP 会变，导致设备指纹变化，需要重新登录。
-     * 如需更宽松策略，可只使用 User-Agent，或引入 Cookie 中的 deviceId。
-     */
-    private String generateDeviceId(HttpServletRequest request) {
-        String ip = getClientIp(request);
-        String ua = request.getHeader("User-Agent");
-        if (ua == null) {
-            ua = "unknown";
-        }
-        String raw = ip + ":" + ua;
-        return DigestUtil.md5Hex(raw);
-    }
-
-    /**
-     * 获取客户端真实 IP（考虑反向代理）
-     */
-    private String getClientIp(HttpServletRequest request) {
-        String ip = request.getHeader("X-Forwarded-For");
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("Proxy-Client-IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("WL-Proxy-Client-IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getRemoteAddr();
-        }
-        // 多个代理时取第一个 IP
-        if (ip != null && ip.contains(",")) {
-            ip = ip.split(",")[0].trim();
-        }
-        return ip;
-    }
-
-    /**
      * 获取 Token 剩余有效期（毫秒）
      */
     private long getTokenRemainingTTL(String token) {
@@ -328,6 +260,46 @@ public class TokenServiceImpl implements TokenService {
             return Math.max(0, expiration.getTime() - System.currentTimeMillis());
         } catch (JwtException e) {
             return 0;
+        }
+    }
+
+    /**
+     * 将旧 Access Token 加入黑名单（登出、刷新时作废旧 AT）
+     * <p>
+     * 黑名单 key: blacklist:{at}，TTL = 该 AT 剩余有效期，
+     * 由 {@code RequestFilter} 在每个请求中检查，命中即 401。
+     *
+     * @param accessToken 请求头原文（可带 "Bearer " 前缀，可为 null）
+     * @param email       当前用户邮箱，用于校验 AT 归属，防止作废他人令牌
+     */
+    private void blacklistAccessToken(String accessToken, String email) {
+        if (accessToken == null || accessToken.isEmpty()) {
+            return;
+        }
+        String at = accessToken.startsWith("Bearer ") ? accessToken.substring(7) : accessToken;
+        try {
+            Claims atClaims = Jwts.parser()
+                    .verifyWith(getSecretKey())
+                    .build()
+                    .parseSignedClaims(at)
+                    .getPayload();
+            if (!"ACCESS".equals(atClaims.get("type", String.class))
+                    || !email.equals(atClaims.getSubject())) {
+                return;
+            }
+        } catch (JwtException e) {
+            log.warn("旧 AT 解析失败，跳过作废: {}", e.getMessage());
+            return;
+        }
+        long ttl = getTokenRemainingTTL(at);
+        if (ttl > 0) {
+            redisTemplate.opsForValue().set(
+                    RedisKey.BLACKLIST + at,
+                    UserAuthLogsConstant.BLACKLIST_VALID,
+                    ttl,
+                    TimeUnit.MILLISECONDS
+            );
+            log.info("旧 AT 已加入黑名单 | email={} | ttl={}ms", email, ttl);
         }
     }
 }

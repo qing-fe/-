@@ -8,7 +8,6 @@ import com.huang.redblack.pojo.vo.UserVO;
 import com.huang.redblack.service.LoginService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.el.parser.Token;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,8 +26,8 @@ public class LoginController {
 
     @PostMapping("/email")
     @Operation(summary = "邮箱登录", description = "通过邮箱登录系统")
-    public Result<TokenVO> loginByEmail(@RequestBody UserDTO userDTO, HttpServletRequest request){
-        TokenVO tokenVO = loginService.loginByEmail(userDTO, request);
+    public Result<TokenVO> loginByEmail(@RequestBody UserDTO userDTO){
+        TokenVO tokenVO = loginService.loginByEmail(userDTO);
         log.info("tokenVO: {}", tokenVO);
         return Result.success(tokenVO);
     }
@@ -48,8 +47,8 @@ public class LoginController {
 
     @PostMapping("/register")
     @Operation(summary = "注册", description = "注册系统")
-    public Result<TokenVO> register(@RequestBody UserDTO userDTO,HttpServletRequest request){
-        TokenVO tokenVO = loginService.register(userDTO, request);
+    public Result<TokenVO> register(@RequestBody UserDTO userDTO){
+        TokenVO tokenVO = loginService.register(userDTO);
         log.info("userVO: {}", tokenVO);
         return Result.success(tokenVO);
     }
